@@ -1,0 +1,93 @@
+version: "3.8"
+
+services:
+  # ==================== MySQL ====================
+  mysql:
+    image: mysql:8.0
+    container_name: toutiao-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: news_app
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== Redis（缓存） ====================
+  redis-cache:
+    image: redis:7-alpine
+    container_name: toutiao-redis-cache
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_cache_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== Redis（向量存储, 端口 6380） ====================
+  redis-vector:
+    image: redis/redis-stack-server:7.2.0-v9
+    container_name: toutiao-redis-vector
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_vector_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== 后端服务 ====================
+  backend:
+    build: .
+    container_name: toutiao-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    # 等待 MySQL 和 Redis 就绪后再启动
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      redis-vector:
+        condition: service_healthy
+    # 环境变量（覆盖代码中的硬编码配置）
+    environment:
+      # 数据库——容器内用服务名连接，不用 localhost
+      DATABASE_URL: "mysql+aiomysql://root:root@mysql:3306/news_app?charset=utf8mb4"
+      # Redis 缓存
+      REDIS_HOST: redis-cache
+      REDIS_PORT: 6379
+      # Redis 向量存储
+      REDIS_VECTOR_URL: "redis://redis-vector:6379"
+      # Ollama（如果 Ollama 在宿主机上，用 host.docker.internal）
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      # API Key（通过 .env 文件传入，不要硬编码）
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY}"
+      TAVILY_API_KEY: "${TAVILY_API_KEY}"
+    volumes:
+      # 上传文件持久化
+      - uploads_data:/app/backend/uploads
+      # 开发时可以把代码挂载进去，改代码不用重新构建
+      # - .:/app
+
+volumes:
+  mysql_data:
+  redis_cache_data:
+  redis_vector_data:
+  uploads_data:

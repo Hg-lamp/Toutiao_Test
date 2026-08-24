@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# 项目
+fronted/dist/
+fronted/node_modules/
+alembic/versions/__pycache__/
+
+# 上传文件（运行时挂载卷）
+backend/uploads/
+
+# 环境变量（构建时用构建参数替代）
+.env

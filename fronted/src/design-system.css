@@ -1,0 +1,132 @@
+/* ==========================================
+   新闻资讯 — 设计系统 v4
+   灵感来源：EVA 绫波丽
+   核心色：亮白 + 淡蓝 + 紫调
+   ========================================== */
+
+/* ----- 颜色变量 ----- */
+:root {
+  /* 主色 — 亮调 */
+  --bg-deep: #e8e8f0;
+  --bg-dark: #f0f0f8;
+  --bg-mid: #f8f8ff;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-card-hover: rgba(255, 255, 255, 0.95);
+  --surface: rgba(240, 240, 248, 0.8);
+
+  /* 文字 */
+  --text-primary: #1a1a2e;
+  --text-secondary: #5a5a7a;
+  --text-tertiary: #8a8aaa;
+
+  /* 强调色 — EVA 紫蓝 */
+  --accent-blue: #4060d0;
+  --accent-purple: #8050c0;
+  --accent-cyan: #40a0d0;
+  --accent-pink: #d05080;
+
+  /* 交互 */
+  --border-light: rgba(60, 60, 120, 0.1);
+  --border-hover: rgba(60, 60, 120, 0.2);
+  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.1);
+
+  /* 字体 */
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* 动画 */
+  --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ----- 覆盖 Vant 主题变量 ----- */
+:root {
+  --van-primary-color: var(--accent-blue);
+  --van-nav-bar-title-text-color: var(--text-primary);
+  --van-nav-bar-icon-color: var(--text-secondary);
+  --van-nav-bar-title-font-size: 17px;
+  --van-tab-active-text-color: var(--accent-purple);
+  --van-tab-text-color: var(--text-secondary);
+  --van-tabs-bottom-bar-color: var(--accent-purple);
+  --van-tabs-bottom-bar-height: 2px;
+  --van-cell-title-font-size: 15px;
+  --van-cell-value-font-size: 14px;
+  --van-cell-title-color: var(--text-primary);
+  --van-cell-value-color: var(--text-secondary);
+  --van-cell-background: var(--bg-card);
+  --van-cell-vertical-padding: 13px;
+  --van-cell-horizontal-padding: 16px;
+  --van-cell-group-background: transparent;
+  --van-cell-group-title-padding: 16px 16px 8px;
+  --van-cell-group-title-color: var(--text-tertiary);
+  --van-button-primary-background: var(--accent-blue);
+  --van-button-primary-border-color: var(--accent-blue);
+  --van-tabbar-background: var(--bg-card);
+  --van-tabbar-item-active-color: var(--accent-purple);
+  --van-tabbar-item-text-color: var(--text-tertiary);
+  --van-field-label-color: var(--text-secondary);
+  --van-field-input-text-color: var(--text-primary);
+  --van-field-placeholder-text-color: var(--text-tertiary);
+  --van-nav-bar-background: var(--bg-card);
+  --van-nav-bar-border-color: var(--border-light);
+  --van-popup-background: var(--bg-dark);
+  --van-toast-background: rgba(255, 255, 255, 0.9);
+  --van-empty-description-color: var(--text-tertiary);
+  --van-grid-item-content-background: var(--bg-card);
+  --van-dialog-header-font-weight: 600;
+  --van-dialog-background: var(--bg-dark);
+  --van-dialog-header-color: var(--text-primary);
+  --van-dialog-message-color: var(--text-secondary);
+  --van-button-default-color: var(--text-secondary);
+  --van-button-default-background: var(--surface);
+  --van-button-default-border-color: var(--border-light);
+  --van-cell-border-color: var(--border-light);
+  --van-tabbar-border-color: var(--border-light);
+  --van-tabs-bottom-bar-width: 20px;
+  --van-nav-bar-arrow-size: 18px;
+}
+
+/* ----- 全局重置 ----- */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-deep) !important;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ----- 卡片通用样式 ----- */
+.card {
+  background: var(--bg-card);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 10px;
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border-light);
+  transition: box-shadow 0.2s var(--ease-smooth), transform 0.2s var(--ease-smooth);
+}
+
+.card:active {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
+
+/* ----- 动画 ----- */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ----- 减少动效 ----- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
