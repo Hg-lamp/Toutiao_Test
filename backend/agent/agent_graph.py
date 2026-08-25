@@ -5,6 +5,7 @@ from typing import TypedDict, Literal, Annotated
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
 from langgraph.constants import END, START
 from langgraph.graph import MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
 from langgraph.types import Command
 
 
@@ -12,6 +13,8 @@ from backend.config.model import chat_model, tool_model, structured_model
 from backend.config.prompt_template import INTENT_MESSAGES, OVER_ALL_PROMPT
 from backend.services.Rag import Rag
 from backend.services.tool_worker import ToolWorker
+from backend.services.tools import TOOLS
+from backend.utils.toolnode_cache_func import wrap_tool_call
 
 
 #图状态定义
@@ -41,18 +44,13 @@ async def intent_choose_router(state:OverAllState)->Command[Literal["rag_node","
     if "rag" in state["intent"]:
         return Command(goto="rag_node")
     elif "tool" in state["intent"]:
-        return Command(goto="tool_node")
+        return Command(
+            update={
+                "messages":await tool_model.ainvoke([SystemMessage(content="根据用户的问题使用工具进行回答"),HumanMessage(content=state["input"])])
+            },
+            goto="tool_node")
     return Command(goto="llm_node")
 
-
-async def tool_node(state:OverAllState)->OverAllState:
-    tool_ans = await tool_model.ainvoke([SystemMessage(content="根据用户的问题使用工具进行回答"),HumanMessage(content=state["input"])])
-    # 清理reasoning_content，返回的aimessage因为带了reasoning
-    # tool_ans.additional_kwargs.pop("reasoning_content", None)
-    tool_msg = await ToolWorker(tool_ans).work()
-    return {
-        "messages":[tool_ans]+tool_msg
-    }
 
 async def rag_node(state:OverAllState)->OverAllState:
     rag_msg=state["messages"]+[SystemMessage("由于上一个问题识别到rag，现在请你对用户的那个问题进行识别，提炼出核心的内容方便下一步的检索")]
@@ -74,7 +72,7 @@ async def llm_node(state:OverAllState)->OverAllState:
 
 
 
-async def ReAct_node(state:OverAllState)->Command[Literal["intent_node","__end__"]]:
+async def react_node(state:OverAllState)->Command[Literal["intent_node","__end__"]]:
     if state["retry_count"]>=3:
         # 超过重试次数，直接使用最后一条消息作为输出
         return Command(update={
@@ -94,18 +92,18 @@ async def ReAct_node(state:OverAllState)->Command[Literal["intent_node","__end__
 
 
 builder = StateGraph(state_schema=OverAllState,output_schema=OutputState)
-builder.add_node(llm_node)
-builder.add_node(rag_node)
-builder.add_node(tool_node)
-builder.add_node(ReAct_node)
-builder.add_node(intent_choose_router)
-builder.add_node(intent_node)
+builder.add_node("llm_node",llm_node)
+builder.add_node("rag_node",rag_node)
+builder.add_node("tool_node",ToolNode(tools=TOOLS,awrap_tool_call=wrap_tool_call))
+builder.add_node("react_node",react_node)
+builder.add_node("intent_choose_router",intent_choose_router)
+builder.add_node("intent_node",intent_node)
 
 builder.add_edge(START,"intent_node")
 builder.add_edge("intent_node","intent_choose_router")
 builder.add_edge("tool_node","llm_node")
 builder.add_edge("rag_node","llm_node")
-builder.add_edge("llm_node","ReAct_node")
+builder.add_edge("llm_node","react_node")
 
 graph= builder.compile()
 

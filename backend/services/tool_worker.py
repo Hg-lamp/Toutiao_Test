@@ -1,11 +1,8 @@
-#先取代mcp，对工具调用进行统一的，简单的完成
-from typing import Any
-
 from langchain_core.messages import ToolMessage
 
 from backend.services.tools import tool_map
 
-
+#由于工具调用命中缓存使用了官方ToolNode，这里的工具执行废弃
 class ToolWorker:
     def __init__(self,tool_msg:ToolMessage):
         self.tool_msg = tool_msg

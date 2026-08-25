@@ -1,8 +1,9 @@
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
-
+#搜索工具
 tavily= TavilySearch()
 
+#测试的一个工具
 @tool
 async def growth_rate(now:float,before:float):
     """
@@ -13,8 +14,6 @@ async def growth_rate(now:float,before:float):
     """
     return f'{(now/before)*100}%'
 
-# 异步化 TavilySearch——确保它支持 ainvoke（TavilySearch 底层是 httpx，原生支持异步）
-# 不需要额外改动，langchain_tavily 的 TavilySearch 已实现 ainvoke
 
 TOOLS=[tavily,growth_rate]
 
