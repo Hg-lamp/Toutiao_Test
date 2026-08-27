@@ -7,12 +7,12 @@ from langgraph.constants import END, START
 from langgraph.graph import MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.types import Command
+from loguru import logger
 
-
-from backend.config.model import chat_model, tool_model, structured_model
+from backend.config.model import chat_model, tool_model, structured_react_model, structured_intent_model
 from backend.config.prompt_template import INTENT_MESSAGES, OVER_ALL_PROMPT
 from backend.services.Rag import Rag
-from backend.services.tool_worker import ToolWorker
+# from backend.services.tool_worker import ToolWorker
 from backend.services.tools import TOOLS
 from backend.utils.toolnode_cache_func import wrap_tool_call
 
@@ -34,14 +34,14 @@ class OutputState(TypedDict):
 #意图识别
 async def intent_node(state:OverAllState)->OverAllState:
     msg =INTENT_MESSAGES+[HumanMessage(state["input"])]
-    intent_msg = await chat_model.ainvoke(msg)
+    intent_msg = await structured_intent_model.ainvoke(msg)
     return {
-        "intent":intent_msg.content,
-        "messages":AIMessage(content=f"判断到用户意图，执行策略：{intent_msg.content}")
+        "intent":intent_msg.data,
+        "messages":AIMessage(content=f"判断到用户意图，执行策略：{intent_msg.data}")
     }
 
 async def intent_choose_router(state:OverAllState)->Command[Literal["rag_node","tool_node","llm_node"]]:
-    if "rag" in state["intent"]:
+    if state["intent"]=="rag":
         return Command(goto="rag_node")
     elif "tool" in state["intent"]:
         return Command(
@@ -53,7 +53,7 @@ async def intent_choose_router(state:OverAllState)->Command[Literal["rag_node","
 
 
 async def rag_node(state:OverAllState)->OverAllState:
-    rag_msg=state["messages"]+[SystemMessage("由于上一个问题识别到rag，现在请你对用户的那个问题进行识别，提炼出核心的内容方便下一步的检索")]
+    rag_msg=[SystemMessage("请你对用户问题进行提炼总结，返回问题的关键词，以方便下一步作为检索关键词进行数据检索"),HumanMessage(content=state['input'])]
     core_content = (await chat_model.ainvoke(rag_msg)).content
     context = await Rag(core_content).run()
     return {
@@ -79,7 +79,7 @@ async def react_node(state:OverAllState)->Command[Literal["intent_node","__end__
             "output":state["messages"][-1].content if state["messages"] else "抱歉，无法回答该问题",
         },goto=END)
     react_msg=state["messages"]+[SystemMessage(content="请你对从最新一个用户问题到得到最后答案的这一系列会话，进行判断，判断是否解决了用户的问题。只回答一个词：解决了就返回True，没有就返回False")]
-    res = await structured_model.ainvoke(react_msg)
+    res = await structured_react_model.ainvoke(react_msg)
     # 清理推理模型返回的reasoning_content
     # res.additional_kwargs.pop("reasoning_content", None)
     # content = res.content.strip()
@@ -91,13 +91,20 @@ async def react_node(state:OverAllState)->Command[Literal["intent_node","__end__
         return Command(update={"retry_count":1},goto='intent_node')
 
 
+
+async def final_logger(state:OverAllState)->OverAllState:
+    logger.info(f"输入内容：{state['input']},意图识别为：{state['intent']},回溯次数：{state['retry_count']}")
+    return {}
+
+
 builder = StateGraph(state_schema=OverAllState,output_schema=OutputState)
 builder.add_node("llm_node",llm_node)
 builder.add_node("rag_node",rag_node)
-builder.add_node("tool_node",ToolNode(tools=TOOLS,awrap_tool_call=wrap_tool_call))
+builder.add_node("tool_node",ToolNode(tools=TOOLS,awrap_tool_call=wrap_tool_call))#)
 builder.add_node("react_node",react_node)
 builder.add_node("intent_choose_router",intent_choose_router)
 builder.add_node("intent_node",intent_node)
+builder.add_node("final_logger",final_logger,defer=True)#延迟节点，对整个图的执行进行一次总结
 
 builder.add_edge(START,"intent_node")
 builder.add_edge("intent_node","intent_choose_router")

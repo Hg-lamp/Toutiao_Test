@@ -1,5 +1,4 @@
 import json
-
 from langchain_core.messages import ToolMessage
 from langgraph.cache.base import FullKey
 from langgraph.cache.memory import InMemoryCache
@@ -9,7 +8,7 @@ CACHE=InMemoryCache()
 TOOL_CACHE_NS=("tool_cache",)
 async def wrap_tool_call(request,execute):
     tool_name=request.tool_call["name"]
-    tool_args = json.dumps(request.tool_call["args"])
+    tool_args = json.dumps(request.tool_call["args"],sort_keys=True)
     tool_call_id=request.runtime.tool_call_id
 
     #工具名和代入参数作为键来判断是否重复调用

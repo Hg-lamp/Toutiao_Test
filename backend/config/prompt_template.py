@@ -22,7 +22,7 @@ ult_template=ChatPromptTemplate(
         few_shot_template,
     ]
 )
-INTENT_MESSAGES=ult_template.invoke({"core_content":"你是意图识别者，首先判断用户问题是否跟公考相关，是则返回rag。如果不是则判断需不需要进行网络搜素，是则返回tool。以上都不是则返回straight_answer"
+INTENT_MESSAGES=ult_template.invoke({"core_content":"你是意图识别者，首先判断用户问题是否跟游戏和公考相关，是则返回rag。如果不是则判断需不需要进行网络搜素，信息查询，是则返回tool。以上都不是则返回straight_answer"
 }).to_messages()
 #ai全局提示词
 OVER_ALL_PROMPT="""

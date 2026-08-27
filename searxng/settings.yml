@@ -1,0 +1,51 @@
+# SearXNG 配置文件
+# 使用默认设置作为基础，只覆盖需要修改的部分
+# 参考文档: https://docs.searxng.org/admin/settings/settings.yml
+
+use_default_settings: true
+
+general:
+  instance_name: "Toutiao SearXNG"
+
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  secret_key: "change_this_to_a_random_secret_key"
+
+search:
+  formats:
+    - html
+    - json
+
+# 引擎配置——只启用需要的引擎
+# 默认配置中很多引擎是 disabled 的，这里显式启用
+engines:
+  # 百度搜索（中文搜索效果好，优先使用）
+  - name: baidu
+    enabled: true
+    shortcut: bd
+    timeout: 5.0
+
+  # 百度图片搜索
+  - name: baidu images
+    enabled: true
+    shortcut: bdi
+    timeout: 5.0
+
+  # Bing 搜索（英文搜索效果好）
+  - name: bing
+    enabled: true
+    shortcut: bi
+    timeout: 5.0
+
+  # Bing 新闻
+  - name: bing news
+    enabled: true
+    shortcut: bin
+    timeout: 5.0
+
+  # DuckDuckGo（备用搜索引擎）
+  - name: duckduckgo
+    enabled: true
+    shortcut: ddg
+    timeout: 5.0

@@ -4,6 +4,7 @@ from langchain_community.embeddings import OllamaEmbeddings
 from langchain_deepseek import ChatDeepSeek
 
 from backend.schemas.aichatRes import ReflectionResponse
+from backend.schemas.intent_res import IntentRequest
 from backend.services.tools import TOOLS
 
 # 聊天大模型
@@ -22,8 +23,8 @@ chat_model = ChatDeepSeek(
 # 绑定工具的模型
 tool_model = chat_model.bind_tools(TOOLS)
 # 结构化规范输出的模型
-structured_model = chat_model.with_structured_output(ReflectionResponse)
-
+structured_react_model = chat_model.with_structured_output(ReflectionResponse)
+structured_intent_model=chat_model.with_structured_output(IntentRequest)
 # 嵌入模型
 embed_model = OllamaEmbeddings(
     model="qwen3-embedding:0.6b",
