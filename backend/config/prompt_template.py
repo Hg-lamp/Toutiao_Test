@@ -1,29 +1,29 @@
-#意图识别提示词
-from langchain_core.prompts import FewShotChatMessagePromptTemplate, ChatPromptTemplate
-
-examples=[
-    {"input":"查询佛山今日天气","output":"tool"},
-    {"input":"资料分析求基期差该怎么求","output":"rag"},
-    {"input":"apple翻译成中文是什么",'output':'straight_answer'},
-]
-examples_prompt_template=ChatPromptTemplate([
-    ("user","{input}"),
-    ("ai","{output}")
-    ]
-)
-#初步的提示词列表
-few_shot_template=FewShotChatMessagePromptTemplate(
-    examples=examples,
-    example_prompt=examples_prompt_template,
-)
-ult_template=ChatPromptTemplate(
-    [
-        ("system","{core_content}"),
-        few_shot_template,
-    ]
-)
-INTENT_MESSAGES=ult_template.invoke({"core_content":"你是意图识别者，首先判断用户问题是否跟游戏和公考相关，是则返回rag。如果不是则判断需不需要进行网络搜素，信息查询，是则返回tool。以上都不是则返回straight_answer"
-}).to_messages()
+# 意图识别提示词
+# from langchain_core.prompts import FewShotChatMessagePromptTemplate, ChatPromptTemplate
+#
+# examples=[
+#     {"input":"查询佛山今日天气","output":"tool"},
+#     {"input":"资料分析求基期差该怎么求","output":"rag"},
+#     {"input":"apple翻译成中文是什么",'output':'straight_answer'},
+# ]
+# examples_prompt_template=ChatPromptTemplate([
+#     ("user","{input}"),
+#     ("ai","{output}")
+#     ]
+# )
+# #初步的提示词列表
+# few_shot_template=FewShotChatMessagePromptTemplate(
+#     examples=examples,
+#     example_prompt=examples_prompt_template,
+# )
+# ult_template=ChatPromptTemplate(
+#     [
+#         ("system","{core_content}"),
+#         few_shot_template,
+#     ]
+# )
+# INTENT_MESSAGES=ult_template.invoke({"core_content":"你是意图识别者，首先判断用户问题是否跟游戏和公考相关，是则返回rag。如果不是则判断需不需要进行网络搜素，信息查询，是则返回tool。以上都不是则返回straight_answer"
+# }).to_messages()
 #ai全局提示词
 OVER_ALL_PROMPT="""
     你是知识问答小助手，你的名字叫 鼠鼠，负责为用户给出合理的，符合逻辑的，符合社会主义核心价值观的回答

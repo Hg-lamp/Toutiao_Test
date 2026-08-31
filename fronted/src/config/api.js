@@ -13,4 +13,6 @@ export const apiConfig = {
 export const aiChatConfig = {
   // 后端 AI 聊天 SSE 接口地址
   apiEndpoint: `${apiConfig.baseURL}/api/ai/chat`,
+  // 文件上传接口地址
+  uploadEndpoint: `${apiConfig.baseURL}/api/upload`,
 }

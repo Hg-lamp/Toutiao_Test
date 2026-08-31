@@ -1,11 +1,7 @@
 import os
 
-from langchain_community.embeddings import OllamaEmbeddings
 from langchain_deepseek import ChatDeepSeek
-
-from backend.schemas.aichatRes import ReflectionResponse
-from backend.schemas.intent_res import IntentRequest
-from backend.services.tools import TOOLS
+from backend.services.tools import CHILD_TOOLS, PARENT_TOOLS
 
 # 聊天大模型
 chat_model = ChatDeepSeek(
@@ -20,13 +16,9 @@ chat_model = ChatDeepSeek(
         }
     }
 )
-# 绑定工具的模型
-tool_model = chat_model.bind_tools(TOOLS)
-# 结构化规范输出的模型
-structured_react_model = chat_model.with_structured_output(ReflectionResponse)
-structured_intent_model=chat_model.with_structured_output(IntentRequest)
-# 嵌入模型
-embed_model = OllamaEmbeddings(
-    model="qwen3-embedding:0.6b",
-    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-)
+
+# 绑定所有工具的父模型
+tool_model = chat_model.bind_tools(PARENT_TOOLS)
+
+#绑定除子agent之外的所有工具的子模型
+child_model = chat_model.bind_tools(CHILD_TOOLS)

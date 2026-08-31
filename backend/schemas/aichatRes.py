@@ -1,3 +1,4 @@
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -8,6 +9,7 @@ class MessageItem(BaseModel):
 
 class UserChatRequest(BaseModel):
     messages: list[MessageItem]
+    thread_id:Optional[str]
 
 
 class ReflectionResponse(BaseModel):

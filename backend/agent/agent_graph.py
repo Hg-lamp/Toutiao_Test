@@ -1,120 +1,130 @@
+from typing import Literal
 
-from operator import add
-from typing import TypedDict, Literal, Annotated
-
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
-from langgraph.constants import END, START
-from langgraph.graph import MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
+
+from backend.config.graph_config import retry_policy
+from backend.config.model import tool_model
+from backend.config.db_config import CHECKPOINTER_DATABASE_URL
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.errors import GraphRecursionError
+from backend.config.prompt_template import OVER_ALL_PROMPT
+from backend.services.tools import PARENT_TOOLS
 from loguru import logger
 
-from backend.config.model import chat_model, tool_model, structured_react_model, structured_intent_model
-from backend.config.prompt_template import INTENT_MESSAGES, OVER_ALL_PROMPT
-from backend.services.Rag import Rag
-# from backend.services.tool_worker import ToolWorker
-from backend.services.tools import TOOLS
-from backend.utils.toolnode_cache_func import wrap_tool_call
+class ParentState(MessagesState):
+    input : str
+    output:str
 
-
-#图状态定义
-class OverAllState(MessagesState):
+class input_state(MessagesState):
     input:str
-    output:str
-    intent:str
-    context:list[str]
-    retry_count:Annotated[int,add]
 
-
-class OutputState(TypedDict):
+class output_state(MessagesState):
     output:str
 
-#节点定义
 
-#意图识别
-async def intent_node(state:OverAllState)->OverAllState:
-    msg =INTENT_MESSAGES+[HumanMessage(state["input"])]
-    intent_msg = await structured_intent_model.ainvoke(msg)
+class private_state(MessagesState):
+    pass
+async def llm_node(parent_state: ParentState)->ParentState:
+    history_msg = list(parent_state['messages'])
+
+    # 系统提示词不写入 checkpoint，每次调用时确保置于消息首位，
+    # 避免历史消息被持久化后再次注入导致重复
+    if not history_msg or not isinstance(history_msg[0], SystemMessage):
+        history_msg = [SystemMessage(OVER_ALL_PROMPT)] + history_msg
+
+    # 防御性清理：如果消息列表中存在有 tool_calls 的 AI 消息
+    # 但后续没有足够的 ToolMessage 跟随，则移除该 tool_calls
+    # 防止 OpenAI API 400 错误 (insufficient tool messages)
+    cleaned = []
+    pending_tool_ids = set()
+    pending_ai_idx = None  # 记录在 cleaned 中对应 AIMessage 的索引
+    for msg in history_msg:
+        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            pending_tool_ids = {tc['id'] for tc in msg.tool_calls}
+            pending_ai_idx = len(cleaned)  # 记录这个 AIMessage 在 cleaned 里的位置
+            cleaned.append(msg)
+        elif hasattr(msg, 'tool_call_id') and msg.tool_call_id:
+            if msg.tool_call_id in pending_tool_ids:
+                pending_tool_ids.discard(msg.tool_call_id)
+                cleaned.append(msg)
+            else:
+                # 没有对应 tool_calls 的 ToolMessage — 丢弃
+                pass
+        else:
+            # 普通消息（System/Human/AI 无 tool_calls）
+            # 如果前面还有未匹配的 tool_calls，说明这些工具调用被丢弃了
+            if pending_tool_ids:
+                pending_tool_ids.clear()
+                pending_ai_idx = None
+            cleaned.append(msg)
+
+    # 如果末尾还有未匹配的 tool_calls，找到对应的 AIMessage 移除它们
+    if pending_tool_ids and pending_ai_idx is not None:
+        from langchain_core.messages import AIMessage
+        orphan = cleaned[pending_ai_idx]
+        valid_tool_calls = [tc for tc in orphan.tool_calls if tc['id'] not in pending_tool_ids]
+        cleaned[pending_ai_idx] = AIMessage(
+            content=orphan.content or "",
+            tool_calls=valid_tool_calls,
+            additional_kwargs=orphan.additional_kwargs,
+            response_metadata=orphan.response_metadata,
+        )
+
+    llm_output=await tool_model.ainvoke(cleaned)
+
     return {
-        "intent":intent_msg.data,
-        "messages":AIMessage(content=f"判断到用户意图，执行策略：{intent_msg.data}")
+        "messages":[llm_output],
     }
 
-async def intent_choose_router(state:OverAllState)->Command[Literal["rag_node","tool_node","llm_node"]]:
-    if state["intent"]=="rag":
-        return Command(goto="rag_node")
-    elif "tool" in state["intent"]:
-        return Command(
-            update={
-                "messages":await tool_model.ainvoke([SystemMessage(content="根据用户的问题使用工具进行回答"),HumanMessage(content=state["input"])])
-            },
-            goto="tool_node")
-    return Command(goto="llm_node")
+async def router(parent_state:ParentState)->Command[Literal["tool_node","__end__"]]:
+    last_msg = parent_state['messages'][-1]
+    if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
+        return Command(goto="tool_node")
+    return Command(goto="__end__", update={
+        "output": parent_state['messages'][-1].content
+    })
 
 
-async def rag_node(state:OverAllState)->OverAllState:
-    rag_msg=[SystemMessage("请你对用户问题进行提炼总结，返回问题的关键词，以方便下一步作为检索关键词进行数据检索"),HumanMessage(content=state['input'])]
-    core_content = (await chat_model.ainvoke(rag_msg)).content
-    context = await Rag(core_content).run()
-    return {
-        "context":context,
-        "messages":SystemMessage(content=f"知识库检索结果如下：\n{context}\n请基于以上信息回答用户的问题")
-    }
+builder = StateGraph(state_schema=ParentState,input_state_schema=input_state,output_state_schema=output_state,private_state_schema=private_state)
+
+builder.add_node("llm_node", llm_node,timeout=50,retry_policy=retry_policy)
+builder.add_node("router", router)
+
+# 封装 ToolNode，确保 tool_calls 与 ToolMessage 一一对应
+class LoggingToolNode:
+    def __init__(self, tools):
+        self._tool_node = ToolNode(tools=tools)
+
+    async def __call__(self, state, config=None):
+        return await self._tool_node.ainvoke(state, config)
+
+builder.add_node("tool_node", LoggingToolNode(PARENT_TOOLS), timeout=120, retry_policy=retry_policy)
 
 
-async def llm_node(state:OverAllState)->OverAllState:
-    ult_res = await chat_model.ainvoke(state["messages"])
-    # 清理reasoning_content
-    # ult_res.additional_kwargs.pop("reasoning_content", None)
-    return {
-        "messages":ult_res
-    }
-
-
-
-async def react_node(state:OverAllState)->Command[Literal["intent_node","__end__"]]:
-    if state["retry_count"]>=3:
-        # 超过重试次数，直接使用最后一条消息作为输出
-        return Command(update={
-            "output":state["messages"][-1].content if state["messages"] else "抱歉，无法回答该问题",
-        },goto=END)
-    react_msg=state["messages"]+[SystemMessage(content="请你对从最新一个用户问题到得到最后答案的这一系列会话，进行判断，判断是否解决了用户的问题。只回答一个词：解决了就返回True，没有就返回False")]
-    res = await structured_react_model.ainvoke(react_msg)
-    # 清理推理模型返回的reasoning_content
-    # res.additional_kwargs.pop("reasoning_content", None)
-    # content = res.content.strip()
-    if res.is_solved:
-        return Command(update={
-            "output":state["messages"][-1].content,
-        },goto=END)
-    else:
-        return Command(update={"retry_count":1},goto='intent_node')
-
-
-
-async def final_logger(state:OverAllState)->OverAllState:
-    logger.info(f"输入内容：{state['input']},意图识别为：{state['intent']},回溯次数：{state['retry_count']}")
-    return {}
-
-
-builder = StateGraph(state_schema=OverAllState,output_schema=OutputState)
-builder.add_node("llm_node",llm_node)
-builder.add_node("rag_node",rag_node)
-builder.add_node("tool_node",ToolNode(tools=TOOLS,awrap_tool_call=wrap_tool_call))#)
-builder.add_node("react_node",react_node)
-builder.add_node("intent_choose_router",intent_choose_router)
-builder.add_node("intent_node",intent_node)
-builder.add_node("final_logger",final_logger,defer=True)#延迟节点，对整个图的执行进行一次总结
-
-builder.add_edge(START,"intent_node")
-builder.add_edge("intent_node","intent_choose_router")
+builder.add_edge(START, "llm_node")
+builder.add_edge("llm_node", "router",)
 builder.add_edge("tool_node","llm_node")
-builder.add_edge("rag_node","llm_node")
-builder.add_edge("llm_node","react_node")
 
-graph= builder.compile()
 
-async def ai_response(user_question:str,user_chat_all:list[BaseMessage]):
-    ult_msg=[SystemMessage(content=OVER_ALL_PROMPT)]+user_chat_all
-    res = await graph.ainvoke({"messages":ult_msg,"input":user_question,"retry_count":0})
-    return res["output"]
+
+async def ai_response(input:str,thread_id:str):
+    async with AsyncPostgresSaver.from_conn_string(CHECKPOINTER_DATABASE_URL) as saver:
+        await saver.setup()
+        graph = builder.compile(checkpointer=saver)
+        config = {
+            "configurable": {
+                "thread_id": thread_id
+            },
+            "recursion_limit": 100,
+        }
+        try:
+            async for r in graph.astream(
+                {"input": input, "messages": [HumanMessage(content=input)]},
+                config=config, stream_mode="messages"
+            ):
+                yield r
+        except GraphRecursionError as e:
+            logger.info(f"Graph recursion error: {e}")

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 # 加载 .env 文件到环境变量（必须在导入其他模块之前）
 load_dotenv()
 
-from backend.routers import news, favorite, users, history, ai_chat
+from backend.routers import news, favorite, users, history, ai_chat, upload
 from backend.utils.exception_handler import register_exception_handlers
 
 app = FastAPI()
@@ -38,6 +38,7 @@ app.include_router(users.router)
 app.include_router(favorite.router)
 app.include_router(history.router)
 app.include_router(ai_chat.router)
+app.include_router(upload.router)
 
 # 挂载静态文件目录（头像上传）
 import os

@@ -1,17 +1,12 @@
 import json
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessageChunk
 
-from backend.schemas.aichatRes import MessageItem
-
-
-#前端消息列表处理
-def change_message(list_msg:list[MessageItem]):
-    graph_messages_list=[AIMessage(content=item.content) if item.role=="assistant" else HumanMessage(content = item.content)  for item in list_msg]
-    return graph_messages_list
 
 #流式返回数据
-async def stream_response(output:str):
-    for chunk in output:
-        yield f"data: {json.dumps({'content':chunk})}\n\n"
+async def stream_response(output):
+    async for chunk, metadata in output:
+        # 只流 AI 的文本回复，跳过工具执行结果
+        if isinstance(chunk, AIMessageChunk) and chunk.content:
+            yield f"data: {json.dumps({'content': chunk.content})}\n\n"
     yield "data: [DONE]\n\n"
