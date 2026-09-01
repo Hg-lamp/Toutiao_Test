@@ -112,6 +112,7 @@ docker compose up -d --build
       │
       └── ReAct 循环（recursion_limit 100）
           └── LLM 调用工具 → 工具返回结果 → LLM 推理 → ...
+```
 
 ### 子图（Child Graph）
 
