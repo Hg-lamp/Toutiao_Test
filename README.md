@@ -1,6 +1,6 @@
 # 新闻资讯 AI 平台
 
-**FastAPI + LangGraph + DeepSeek** 构建的 Agentic RAG 新闻资讯 AI 平台。
+**FastAPI + LangGraph + LangChain** 构建的 Agentic RAG 新闻资讯 AI 平台。
 
 ## 功能特性
 
@@ -8,12 +8,10 @@
 - **用户系统** — 注册、登录、个人信息、头像上传
 - **收藏/历史记录** — 收藏新闻、浏览历史
 - **AI Agentic RAG 聊天** — 基于 LangGraph 的智能问答系统
-  - 意图识别（RAG / 工具调用 / 直答）
-  - RAG 知识库检索（公考知识）
+  - RAG 知识库检索（自定义）
   - 互联网搜索工具（SearXNG）
-  - 计算器工具
   - 子 Agent 任务分发
-  - ReAct 循环（最多 3 轮）
+  - ReAct 循环（recursion_limit 100）
 - **文件上传分析** — 支持上传 TXT/MD/PDF/DOCX/XLSX/CSV，自动解析文本内容注入对话上下文
 - **对话持久化** — 基于 LangGraph Checkpoint 自动保存会话状态
 
@@ -24,7 +22,7 @@
 | Web 框架 | FastAPI | 后端 API 框架 |
 | AI 引擎 | LangGraph | 智能体编排 |
 | LLM | DeepSeek | 大语言模型 |
-| 嵌入模型 | Ollama (qwen3-embedding) | 文本向量化 |
+| 嵌入模型 | Ollama (qwen3-embedding:0.6b) | 文本向量化 |
 | 向量存储 | Redis (RediSearch) | 向量索引与检索 |
 | 缓存 | Redis | 数据缓存 |
 | 数据库 | MySQL + aiomysql | 持久化数据存储 |
@@ -39,7 +37,7 @@
 - Python 3.12+
 - MySQL 8.0+
 - Redis 7.0+（6379 缓存 + 6380 向量存储）
-- PostgreSQL 14+（LangGraph Checkpoint）
+- PostgreSQL 16+（LangGraph Checkpoint）
 - Ollama（本地嵌入模型）
 
 ## 快速开始
@@ -58,10 +56,10 @@ cp .env.example .env
 # 3. 安装依赖
 pip install -r requirements.txt
 
-# 4. 确保 MySQL、Redis、PostgreSQL 就绪
+# 4. 确保 MySQL、Redis、PostgresSQL 就绪
 #    MySQL: root:root@localhost:3306/news_app (utf8mb4)
 #    Redis: localhost:6379（缓存）+ localhost:6380（向量）
-#    PostgreSQL: postgres:postgres@localhost:5432/langgraph_db
+#    PostgresSQL: postgres:postgres@localhost:5432/langgraph_db
 
 # 5. 执行数据库迁移
 alembic upgrade head
@@ -90,14 +88,49 @@ docker compose up -d --build
 ```
 用户输入
   │
-  ├── 意图识别
-  │   ├── rag → 向量检索知识库 → LLM 回答
-  │   ├── tool → 工具调用（搜索/计算） → LLM 回答
-  │   └── straight_answer → LLM 直接回答
+  ├── 文件上传（可选）
+  │   └── 前端上传 → 后端解析文本 → 注入到对话消息
   │
-  └── ReAct 循环（最多 3 轮）
-      └── 工具调用 → 结果返回 → LLM 推理 → ...
+  └── 父图（Parent Graph）—— ReAct 循环
+      │
+      START → llm_node → router
+                    │         │
+                    │    ┌────┴────┐
+                    │    ▼         ▼
+                    │ tool_node  __end__
+                    │    │
+                    └────┘
+      │
+      ├── llm_node（DeepSeek 模型 + 系统提示词）
+      │   ├── 判断是否需要调用工具
+      │   │   ├── searxng_search_engine → 互联网搜索（SearXNG）
+      │   │   ├── rag_search → 公考知识库检索（Redis 向量）
+      │   │   ├── calculator → 数学表达式计算
+      │   │   └── agent → 子任务分发 → 子图 ReAct 循环
+      │   │
+      │   └── 直接回答用户
+      │
+      └── ReAct 循环（recursion_limit 100）
+          └── LLM 调用工具 → 工具返回结果 → LLM 推理 → ...
+
+### 子图（Child Graph）
+
+由 `agent` 工具触发的独立子图，拥有独立的 ReAct 循环：
+
 ```
+START → llm_node → router → tool_node → llm_node → ...
+                        ↓
+                      __end__ → 返回结果给父图
+```
+
+### 流程说明
+
+| 节点 | 说明 |
+|---|---|
+| `llm_node` | 调用 DeepSeek 模型，系统提示词定义角色（鼠鼠）、回答规范、工具使用方式 |
+| `router` | 检查 LLM 输出是否包含 tool_calls，有则进入工具节点，无则结束 |
+| `tool_node` | 执行 LLM 选择的工具，返回结果给 LLM 进行下一轮推理 |
+| `child_graph` | 由 `agent` 工具触发的独立子图，处理复杂子任务后返回结果 |
 
 ## 目录结构
 
@@ -114,7 +147,9 @@ Toutiao_course/
 │   │   ├── prompt_template.py  # 提示词模板
 │   │   ├── embeddings.py   # 嵌入模型配置
 │   │   ├── redis_vector.py # 向量存储配置
-│   │   └── graph_config.py # LangGraph 配置
+│   │   ├── graph_config.py # LangGraph 配置
+│   │   ├── cache_config.py # Redis 缓存配置
+│   │   └── search_engine.py # SearXNG 搜索配置
 │   ├── crud/               # 数据库 CRUD
 │   ├── models/             # SQLAlchemy 模型
 │   ├── routers/            # API 路由
@@ -150,13 +185,17 @@ Toutiao_course/
 | 用户 | `POST /api/user/login` | 登录 |
 | 用户 | `GET /api/user/info` | 获取用户信息 |
 | 用户 | `PUT /api/user/update` | 更新用户信息 |
+| 用户 | `PUT /api/user/password` | 修改密码 |
 | 用户 | `POST /api/user/avatar` | 上传头像 |
 | 收藏 | `GET /api/favorite/check` | 检查收藏状态 |
 | 收藏 | `POST /api/favorite/add` | 添加收藏 |
-| 收藏 | `POST /api/favorite/remove` | 取消收藏 |
+| 收藏 | `DELETE /api/favorite/remove` | 取消收藏 |
 | 收藏 | `GET /api/favorite/list` | 收藏列表 |
+| 收藏 | `DELETE /api/favorite/clear` | 清空收藏 |
 | 历史 | `POST /api/history/add` | 添加历史记录 |
 | 历史 | `GET /api/history/list` | 历史记录列表 |
+| 历史 | `DELETE /api/history/delete/{history_id}` | 删除单条历史记录 |
+| 历史 | `DELETE /api/history/clear` | 清空历史记录 |
 | AI | `POST /api/ai/chat` | AI 聊天（SSE 流式） |
 | 文件 | `POST /api/upload` | 上传文件（5MB 限制，支持 TXT/MD/PDF/DOCX/XLSX/CSV） |
 
@@ -169,6 +208,7 @@ Toutiao_course/
 | `CHECKPOINTER_DATABASE_URL` | PostgreSQL 连接 URL（LangGraph 会话存储） | `postgresql://postgres:postgres@localhost:5432/langgraph_db` |
 | `REDIS_HOST` | Redis 缓存主机 | `localhost` |
 | `REDIS_PORT` | Redis 缓存端口 | `6379` |
+| `REDIS_DB` | Redis 缓存数据库编号 | `0` |
 | `REDIS_VECTOR_URL` | 向量存储 Redis URL | `redis://localhost:6380` |
 | `OLLAMA_BASE_URL` | Ollama 服务地址 | `http://localhost:11434` |
 | `SEARXNG_HOST` | SearXNG 搜索引擎地址 | `http://localhost:8080` |
@@ -214,12 +254,15 @@ Toutiao_course/
 - [x] Docker 容器化部署
 - [x] Alembic 数据库迁移
 - [x] 文件上传与解析
+- [x] 为工具节点添加缓存机制
 - [ ] 会话管理（列表/删除/重命名）
 - [ ] Skill 路由系统（向量匹配）
 - [ ] 用户档案提炼（Memory 系统）
 - [ ] 上下文超限检测与提示
 - [ ] 单元测试 / 集成测试
 - [ ] 更多工具函数
+- [ ] 消息列表存入数据库
+- [ ] 优化‘我的’界面的效果
 
 ## 许可证
 

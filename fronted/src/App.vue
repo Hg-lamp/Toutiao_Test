@@ -25,19 +25,53 @@
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import SplashScreen from './components/SplashScreen.vue'
 import AmbientBackground from './components/AmbientBackground.vue'
+import { SakuraEffect } from './utils/sakura.js'
 
 const router = useRouter()
 const transitionName = ref('fade-slide')
 const showSplash = ref(true)
+let sakura = null
 
 // 开场动画完成
 const onSplashComplete = () => {
   showSplash.value = false
 }
+
+// 启动樱花特效
+const startSakura = () => {
+  sakura = new SakuraEffect()
+  sakura.start()
+}
+
+const stopSakura = () => {
+  if (sakura) {
+    sakura.stop()
+    sakura = null
+  }
+}
+
+onMounted(() => {
+  // 等待 splash 完成后启动
+  // 如果 splash 已经关闭则立即启动
+  if (!showSplash.value) {
+    startSakura()
+  }
+})
+
+// 监听 splash 关闭
+watch(showSplash, (val) => {
+  if (!val) {
+    startSakura()
+  }
+})
+
+onUnmounted(() => {
+  stopSakura()
+})
 
 // 今日日期
 const today = computed(() => {
