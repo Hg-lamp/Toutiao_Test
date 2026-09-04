@@ -1,6 +1,33 @@
 <template>
   <div class="chat-page">
-    <van-nav-bar title="小助手" fixed />
+    <van-nav-bar title="小助手" fixed>
+      <template #left>
+        <van-icon name="wap-nav" size="22" class="conv-toggle" @click="sidebarVisible = true" />
+      </template>
+    </van-nav-bar>
+
+    <!-- 左侧会话栏（可折叠抽屉） -->
+    <van-popup v-model:show="sidebarVisible" position="left" :style="{ width: '78%', height: '100%' }">
+      <div class="conv-sidebar">
+        <div class="conv-header">
+          <span class="conv-header-title">会话列表</span>
+          <van-button size="small" type="primary" round @click="handleNewChat">新建会话</van-button>
+        </div>
+        <div class="conv-list">
+          <div
+            v-for="conv in chatStore.conversations"
+            :key="conv.threadId"
+            :class="['conv-item', { active: conv.threadId === chatStore.activeThreadId }]"
+            @click="handleSelectConversation(conv)"
+          >
+            <div class="conv-title">{{ conv.title || '新会话' }}</div>
+            <div class="conv-meta">{{ conv.messageCount }} 条 · {{ formatTime(conv.updatedAt) }}</div>
+          </div>
+          <van-empty v-if="!chatStore.conversations.length" description="暂无会话" />
+        </div>
+      </div>
+    </van-popup>
+
     <div class="chat-content">
       <div class="messages" ref="messagesContainer">
         <template v-for="(msg, index) in messages" :key="index">
@@ -36,10 +63,11 @@
   </div>
 </template>
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue'; import TabBar from '../components/TabBar.vue'; import * as marked from 'marked'; import DOMPurify from 'dompurify'; import { aiChatConfig } from '../config/api';
+import { ref, onMounted, nextTick, watch } from 'vue'; import TabBar from '../components/TabBar.vue'; import * as marked from 'marked'; import DOMPurify from 'dompurify'; import { aiChatConfig } from '../config/api'; import { useChatStore } from '../store/modules/chat'; import { useUserStore } from '../store/user';
 const messages = ref([{ role: 'assistant', content: '你好！我是聪明鼠鼠，没有什么麻烦我解决不了！！！' }]);
 const userInput = ref(''); const messagesContainer = ref(null); const isLoading = ref(false);
 const isUploading = ref(false); const fileInput = ref(null);
+const chatStore = useChatStore(); const userStore = useUserStore(); const sidebarVisible = ref(false);
 const formatMessage = (c) => c ? DOMPurify.sanitize(marked.parse(c)) : '';
 const formatSize = (bytes) => { if (bytes < 1024) return bytes + 'B'; if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'; return (bytes / 1024 / 1024).toFixed(1) + 'MB'; };
 const scrollToBottom = () => { if (messagesContainer.value) messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight };
@@ -61,6 +89,33 @@ const handleFileSelect = async (e) => {
 const removeFileMsg = (index) => {
   messages.value.splice(index, 1);
 };
+const formatTime = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const pad = (n) => (n < 10 ? '0' + n : n);
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return d.toDateString() === now.toDateString() ? hm : `${d.getMonth() + 1}-${d.getDate()} ${hm}`;
+};
+const handleNewChat = () => {
+  chatStore.newConversation();
+  messages.value = [{ role: 'assistant', content: '你好！我是聪明鼠鼠，没有什么麻烦我解决不了！！！' }];
+  sidebarVisible.value = false;
+  nextTick(scrollToBottom);
+};
+const handleSelectConversation = async (conv) => {
+  chatStore.selectConversation(conv.threadId);
+  sidebarVisible.value = false;
+  messages.value = [{ role: 'assistant', content: '' }];
+  const res = await chatStore.fetchMessages(conv.threadId);
+  if (res.success) {
+    messages.value = res.data.map((m) => ({ role: m.role, content: m.content }));
+    if (!messages.value.length) messages.value = [{ role: 'assistant', content: '（空会话）' }];
+  } else {
+    messages.value = [{ role: 'assistant', content: `加载失败：${res.message}` }];
+  }
+  await nextTick(); scrollToBottom();
+};
 const sendMessage = async () => {
   let msg = userInput.value.trim();
   if (!msg || isLoading.value) return;
@@ -75,9 +130,10 @@ const sendMessage = async () => {
   messages.value.push({ role: 'assistant', content: '' }); await nextTick(); scrollToBottom();
   isLoading.value = true;
   try {
-    const threadId = sessionStorage.getItem('ai_thread_id') || crypto.randomUUID();
-    sessionStorage.setItem('ai_thread_id', threadId);
-    const res = await fetch(aiChatConfig.apiEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: msg }], thread_id: threadId }) });
+    const threadId = chatStore.activeThreadId;
+    const headers = { 'Content-Type': 'application/json' };
+    if (userStore.token) headers.Authorization = userStore.token;
+    const res = await fetch(aiChatConfig.apiEndpoint, { method: 'POST', headers, body: JSON.stringify({ messages: [{ role: 'user', content: msg }], thread_id: threadId }) });
     if (!res.ok) throw new Error(`请求失败，状态码: ${res.status}`);
     const reader = res.body.getReader(); const decoder = new TextDecoder(); let buf = '', ai = '';
     while (true) {
@@ -85,14 +141,20 @@ const sendMessage = async () => {
       buf += decoder.decode(value, { stream: true }); const lines = buf.split('\n'); buf = lines.pop() || '';
       for (const line of lines) {
         if (line.startsWith('data: ')) { const data = line.slice(6); if (data === '[DONE]') continue;
-          try { const j = JSON.parse(data); if (j.content) { ai += j.content; messages.value[messages.value.length - 1].content = ai; await nextTick(); scrollToBottom() } } catch (e) { console.error(e) } }
+          try { const j = JSON.parse(data);
+            if (j.type === 'meta') {
+              chatStore.activeThreadId = j.thread_id;
+              chatStore.upsertConversation({ threadId: j.thread_id, title: j.title || msg.slice(0, 30), messageCount: 1, updatedAt: new Date().toISOString() });
+              continue;
+            }
+            if (j.content) { ai += j.content; messages.value[messages.value.length - 1].content = ai; await nextTick(); scrollToBottom() } } catch (e) { console.error(e) } }
       }
     }
     if (!ai) messages.value[messages.value.length - 1].content = '抱歉，AI 暂时无法生成回复，请稍后再试。';
   } catch (e) { messages.value[messages.value.length - 1].content = `发生错误: ${e.message}` } finally { isLoading.value = false; await nextTick(); scrollToBottom() }
 };
 watch(messages, () => nextTick(scrollToBottom), { deep: true });
-onMounted(() => scrollToBottom());
+onMounted(async () => { scrollToBottom(); await chatStore.fetchConversations(); });
 </script>
 <style scoped>
 .chat-page {
@@ -327,4 +389,55 @@ onMounted(() => scrollToBottom());
   0%, 60%, 100% { transform: translateY(0); }
   30% { transform: translateY(-8px); }
 }
+
+/* ----- 左侧会话栏 ----- */
+.conv-toggle { cursor: pointer; color: var(--text-primary); }
+.conv-sidebar {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #fffdf6, #fff8ea);
+}
+.conv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 200, 150, 0.2);
+}
+.conv-header-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: "Ma Shan Zheng", "ZCOOL KuaiLe", cursive;
+  letter-spacing: 0.06em;
+}
+.conv-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 8px;
+}
+.conv-item {
+  padding: 12px 14px;
+  border-radius: 16px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.2s var(--ease-smooth), transform 0.2s var(--ease-smooth);
+}
+.conv-item:hover { background: rgba(255, 220, 150, 0.15); }
+.conv-item.active {
+  background: linear-gradient(145deg, #fff3d6, #ffe9bd);
+  border-color: rgba(255, 200, 100, 0.35);
+}
+.conv-title {
+  font-size: 15px;
+  color: var(--text-primary);
+  font-family: "Ma Shan Zheng", "ZCOOL KuaiLe", cursive;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 4px;
+}
+.conv-meta { font-size: 12px; color: var(--text-tertiary); }
 </style>

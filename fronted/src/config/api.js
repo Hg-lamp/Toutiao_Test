@@ -15,4 +15,8 @@ export const aiChatConfig = {
   apiEndpoint: `${apiConfig.baseURL}/api/ai/chat`,
   // 文件上传接口地址
   uploadEndpoint: `${apiConfig.baseURL}/api/upload`,
+  // 会话列表接口（按当前用户）
+  conversationsEndpoint: `${apiConfig.baseURL}/api/ai/conversations`,
+  // 单个会话的消息历史接口
+  messagesEndpoint: (threadId) => `${apiConfig.baseURL}/api/ai/conversations/${threadId}/messages`,
 }
