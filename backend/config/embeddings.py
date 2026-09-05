@@ -1,5 +1,5 @@
 import os
-from langchain_community.embeddings import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings
 
 # 嵌入模型
 embed_model = OllamaEmbeddings(

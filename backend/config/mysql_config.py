@@ -1,5 +1,4 @@
 import os
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # 数据库 URL——优先从环境变量读取，否则用默认值（本地开发）

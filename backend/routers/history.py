@@ -1,9 +1,7 @@
-
-
 from fastapi import APIRouter, Depends, Query, HTTPException, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.config.db_config import get_db
+from backend.config.mysql_config import get_db
 from backend.crud.history import add_history, get_history_list, delete_my_news_history, clear_all_my_history
 from backend.models.users import User
 from backend.schemas.history import HistoryAddRequest, HistoryAddResponse, HistoryListResponse

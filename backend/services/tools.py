@@ -1,7 +1,7 @@
 import numexpr as ne
 from langchain_core.tools import tool
 from backend.config.search_engine import SearXNG
-from backend.services.Rag import Rag
+from backend.services.rag import Rag
 
 #搜索工具
 
@@ -9,13 +9,23 @@ from backend.services.Rag import Rag
 @tool
 async def searxng_search_engine(query:str):
     """
-    互联网搜索工具
-    写入查询问题，对新闻，咨询，实时信息，网络信息进行搜索，返回搜索到的内容
-    :param query: 需要搜索的内容
-    :return: 返回搜索到的结果
+    互联网搜索工具，用于查询新闻、资讯、实时信息、天气、网络信息等。
+    重要：query 必须是精炼的核心关键词，越简短越好（如 "郑州天气"、"佛山天气预报"、"今日股市"）。
+    严禁把用户的完整问句原样传进来（如 "帮我查询今天郑州的天气" 会导致搜不到结果），
+    也不要添加 "今日"、"今天" 等时间词（会干扰搜索）。请先从用户问题中提取核心名词作为 query。
+    :param query: 精炼的搜索关键词/短语
+    :return: 返回搜索到的结果（标题 + 摘要 + 链接）
     """
     try:
-        return await SearXNG.arun(query,engines=["baidu","bing"])
+        results = await SearXNG.aresults(query, num_results=3, engines=["bing", "360search"])
+        if not results:
+            return "未搜索到结果"
+        formatted = []
+        for r in results:
+            if "Result" in r:  # 无结果时的占位
+                continue
+            formatted.append(f"标题：{r.get('title','')}\n摘要：{r.get('snippet','')}\n链接：{r.get('link','')}")
+        return "\n\n".join(formatted) if formatted else "未搜索到结果"
     except Exception as e:
         return f"搜索失败: {str(e)}"
 

@@ -20,7 +20,7 @@ class OutputState(MessagesState):
     output:str
 
 async def llm_node(child_state: ChildState)->ChildState:
-    from backend.config.model import child_model
+    from backend.config.llm_config import child_model
     history_chat = child_state['messages']
     res =await child_model.ainvoke(history_chat)
     return {

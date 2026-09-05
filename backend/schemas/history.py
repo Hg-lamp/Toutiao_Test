@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, ConfigDict
 
-from backend.schemas.base import NewsItemResponse
+from backend.schemas.news_base import NewsItemResponse
 
 
 class HistoryAddRequest(BaseModel):

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.cache.news_cache import get_cached_categories, set_cache_categories, get_cache_news_list, \
     set_cache_news_list
 from backend.models.news import Category, News
-from backend.schemas.base import NewsItemResponse
+from backend.schemas.news_base import NewsItemResponse
 
 
 async def get_categories(db:AsyncSession,skip:int=0,limit:int=100):

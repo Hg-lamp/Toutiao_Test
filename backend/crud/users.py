@@ -1,15 +1,13 @@
 #根据用户名查询用户
 import uuid
 from datetime import datetime, timedelta
-
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-from sqlalchemy.sql.functions import user
 
 from backend.models.users import User, UserToken
 from backend.schemas.users import Register, UserUpdateRequest
-from backend.utils import security
+from backend.utils import auth
 
 
 async def get_user_by_username(db: AsyncSession,username:str):
@@ -20,7 +18,7 @@ async def get_user_by_username(db: AsyncSession,username:str):
 #创建用户
 async def create_user(db:AsyncSession,userdata:Register):
     #先给密码加密--再add
-    hash_password=security.get_hash_password(userdata.password)
+    hash_password=auth.get_hash_password(userdata.password)
     user =User(username=userdata.username, password=hash_password)
     db.add(user)
     await db.commit()
@@ -50,7 +48,7 @@ async def authenticate_user(db:AsyncSession,username:str,password:str):
     user = await get_user_by_username(db,username)
     if not user:
         return None
-    if not security.verify_password(password,user.password):
+    if not auth.verify_password(password,user.password):
         return None
     return user
 
@@ -85,11 +83,11 @@ async def update_user(db:AsyncSession,username:str,user_data:UserUpdateRequest):
     return updated_user
 
 async def change_password(db:AsyncSession,username:str,old_password:str,new_password:str,user:User):
-    if not security.verify_password(old_password,user.password):
+    if not auth.verify_password(old_password,user.password):
         return False
     if old_password ==new_password:
         raise HTTPException(status_code=400,detail="新密码不能与旧密码一样")
-    hashed_new_password = security.get_hash_password(new_password)
+    hashed_new_password = auth.get_hash_password(new_password)
     query = update(User).where(User.username==username).values(password=hashed_new_password)
     res = await db.execute(query)
     await db.commit()

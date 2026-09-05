@@ -1,18 +1,18 @@
 from typing import Literal
-
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
-from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
-
-from backend.config.graph_config import retry_policy
-from backend.config.model import tool_model
-from backend.config.db_config import CHECKPOINTER_DATABASE_URL
+from loguru import logger
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.errors import GraphRecursionError
+
+from backend.config.graph_config import retry_policy
+from backend.config.llm_config import tool_model
+from backend.config.mysql_config import CHECKPOINTER_DATABASE_URL
 from backend.config.prompt_template import OVER_ALL_PROMPT
 from backend.services.tools import PARENT_TOOLS
-from loguru import logger
+
 
 class ParentState(MessagesState):
     input : str
@@ -75,6 +75,11 @@ async def llm_node(parent_state: ParentState)->ParentState:
 
     llm_output=await tool_model.ainvoke(cleaned)
 
+    if hasattr(llm_output, 'tool_calls') and llm_output.tool_calls:
+        logger.info(f"[llm_node] 模型决定调用工具: {[tc['name'] for tc in llm_output.tool_calls]}")
+    else:
+        logger.info("[llm_node] 模型未调用工具，直接作答")
+
     return {
         "messages":[llm_output],
     }
@@ -99,7 +104,16 @@ class LoggingToolNode:
         self._tool_node = ToolNode(tools=tools)
 
     async def __call__(self, state, config=None):
-        return await self._tool_node.ainvoke(state, config)
+        last_msg = state['messages'][-1]
+        calls = getattr(last_msg, 'tool_calls', None)
+        logger.info(f"[tool_node] 进入工具节点，待执行: {[tc['name'] for tc in calls] if calls else '无'}")
+        result = await self._tool_node.ainvoke(state, config)
+        # 打印每个 ToolMessage 的内容，确认工具真实返回
+        for m in result.get('messages', []):
+            if getattr(m, 'type', '') == 'tool':
+                content = m.content
+                logger.info(f"[tool_node] 工具返回: {m.name} -> {str(content)[:500]}")
+        return result
 
 builder.add_node("tool_node", LoggingToolNode(PARENT_TOOLS), timeout=120, retry_policy=retry_policy)
 
@@ -108,9 +122,7 @@ builder.add_edge(START, "llm_node")
 builder.add_edge("llm_node", "router",)
 builder.add_edge("tool_node","llm_node")
 
-
-
-async def ai_response(input:str,thread_id:str):
+async def ai_response(user_question:str,thread_id:str):
     async with AsyncPostgresSaver.from_conn_string(CHECKPOINTER_DATABASE_URL) as saver:
         await saver.setup()
         graph = builder.compile(checkpointer=saver)
@@ -122,7 +134,7 @@ async def ai_response(input:str,thread_id:str):
         }
         try:
             async for r in graph.astream(
-                {"input": input, "messages": [HumanMessage(content=input)]},
+                {"input": user_question, "messages": [HumanMessage(content=user_question)]},
                 config=config, stream_mode="messages"
             ):
                 yield r

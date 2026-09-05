@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.config.db_config import get_db
+from backend.config.mysql_config import get_db
 from backend.crud import news,cache_news
 
 #创建apirouter实例

@@ -14,7 +14,7 @@ export const aiChatConfig = {
   // 后端 AI 聊天 SSE 接口地址
   apiEndpoint: `${apiConfig.baseURL}/api/ai/chat`,
   // 文件上传接口地址
-  uploadEndpoint: `${apiConfig.baseURL}/api/upload`,
+  uploadEndpoint: `${apiConfig.baseURL}/api/ai/upload`,
   // 会话列表接口（按当前用户）
   conversationsEndpoint: `${apiConfig.baseURL}/api/ai/conversations`,
   // 单个会话的消息历史接口

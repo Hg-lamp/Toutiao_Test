@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.config.db_config import get_db
+from backend.config.mysql_config import get_db
 from backend.crud.favorite import is_news_favorite, add_favorite_tool, remove_my_favorite_news, get_my_favorite_list, \
     clear_all_favorite_news
 from backend.models.users import User
@@ -50,7 +50,7 @@ async def get_favorites_list(
     favorite_list=[]
     for news,favorite_time,favorite_id in rows:
         news_dict = {k: v for k, v in news.__dict__.items() if not k.startswith('_sa')}
-        news_dict['category'] = news_dict.pop('category_id', None)
+        news_dict['category'] = news_dict.pop('categoryId', None)
         news_dict['favorite_time'] = favorite_time
         news_dict['favorite_id'] = favorite_id
         favorite_list.append(news_dict)

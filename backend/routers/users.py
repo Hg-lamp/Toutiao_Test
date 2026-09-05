@@ -5,7 +5,7 @@ import os
 import uuid
 import aiofiles
 
-from backend.config.db_config import get_db
+from backend.config.mysql_config import get_db
 from backend.crud import users
 from backend.models.users import User
 from backend.schemas.users import UserAuthResponse, UserInfoResponse, Register, UserUpdateRequest, ExchangeUserPassword
@@ -14,6 +14,8 @@ from backend.utils.response import success_response
 
 router = APIRouter(prefix='/api/user',tags=['users'])
 
+
+#注册路由
 @router.post('/register')
 async def register(user_data: Register,db:AsyncSession=Depends(get_db)):
     #注册逻辑：验证用户是否存在->创建用户->生成token->响应结果
